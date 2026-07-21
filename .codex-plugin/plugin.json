@@ -1,11 +1,13 @@
 {
   "name": "max-ui",
-  "version": "0.1.0+codex.20260721035327",
+  "version": "0.1.0+codex.20260721050528",
   "description": "Max-UI provides project-aware frontend design, refactoring, and visual quality assurance for Codex.",
   "license": "MIT",
   "author": {
     "name": "Local developer"
   },
+  "homepage": "https://github.com/listenBast/max-ui",
+  "repository": "https://github.com/listenBast/max-ui",
   "skills": "./skills/",
   "interface": {
     "displayName": "Max-UI",

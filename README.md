@@ -29,7 +29,13 @@ Use $max-ui to redesign this page and verify desktop and mobile layouts.
 
 ## Local Installation
 
-Place this repository at:
+Clone this repository into the personal plugin directory:
+
+```text
+git clone https://github.com/listenBast/max-ui.git ~/plugins/max-ui
+```
+
+The resulting plugin path should be:
 
 ```text
 ~/plugins/max-ui
@@ -71,4 +77,3 @@ skills/max-ui/agents/openai.yaml
 skills/max-ui/references/
 skills/max-ui/scripts/
 ```
-
