@@ -58,6 +58,10 @@ python <skill-creator>/scripts/quick_validate.py skills/max-ui
 python <plugin-creator>/scripts/validate_plugin.py .
 ```
 
+## License
+
+MIT. See [LICENSE](LICENSE).
+
 ## Structure
 
 ```text
