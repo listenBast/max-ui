@@ -1,0 +1,25 @@
+{
+  "name": "max-ui",
+  "version": "0.1.0+codex.20260721034219",
+  "description": "Max-UI provides project-aware frontend design, refactoring, and visual quality assurance for Codex.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Max-UI",
+    "shortDescription": "Project-aware frontend design and refactoring.",
+    "longDescription": "Max-UI reads an existing frontend before changing it, extracts its design language, detects generic AI patterns and visual defects, applies scoped improvements, and verifies responsive behavior and accessibility.",
+    "developerName": "Local developer",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Audit this frontend and identify the highest-impact visual problems.",
+      "Polish this interface while preserving its product identity.",
+      "Redesign this page with a distinctive, domain-specific visual direction."
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Max-UI"
+  short_description: "Project-aware frontend design and refactoring"
+  default_prompt: "Use $max-ui to audit and improve this frontend while preserving its product identity."
