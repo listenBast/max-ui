@@ -79,6 +79,14 @@ Use `--format json` when structured output will help another script or review st
 - `strong-signal`: patterns that often harm quality but still require local context.
 - `visual-review`: clues that must be judged in the rendered interface.
 
+It also assigns one fixability class:
+
+- `safe-auto`: a narrow repair can be made without choosing a new visual direction.
+- `needs-review`: the defect is credible, but component behavior or layout context must be checked before editing.
+- `direction-required`: the change depends on product identity, hierarchy, palette, typography, or another design decision.
+
+When a page can be rendered, run `scripts/runtime-audit.js` in the page context at each representative viewport. The file is a self-contained browser expression: pass its full contents to the browser evaluation tool and capture the returned object. Use runtime findings to confirm horizontal overflow, clipping, computed contrast, broken images, duplicate IDs, small targets or text, unnamed icon controls, and effect density. The runtime auditor is read-only and does not replace keyboard walkthroughs or screenshot review.
+
 Before reporting or fixing a finding, open the cited code and check whether a local exception makes sense. Prefer a short prioritized backlog over a long catalogue of minor preferences.
 
 For audit-only requests, inspect the running interface when an existing browser runtime and dev command are available, especially before making `visual-review` claims. Do not install a browser or alter the project merely to complete a read-only audit. When rendering is unavailable, state clearly that the result is source-backed and that responsive composition, computed contrast, and visual hierarchy remain partially unverified.
@@ -138,7 +146,7 @@ After editing:
 1. Run the relevant formatter, typecheck, lint, tests, and production build supported by the project.
 2. Start the existing dev server when the project requires one.
 3. Read `references/verification.md` and inspect at least one desktop and one mobile viewport with browser tooling.
-4. Check console errors, failed assets, horizontal overflow, text collision, content clipping, focus visibility, hover/active states, reduced motion, empty/loading/error states, and long-content behavior.
+4. Run `scripts/runtime-audit.js` in each inspected page and check console errors, failed assets, horizontal overflow, text collision, content clipping, focus visibility, hover/active states, reduced motion, empty/loading/error states, and long-content behavior.
 5. Re-run `audit-ui.mjs` on the changed scope. Confirm that fixed findings disappeared and that no higher-severity findings were introduced.
 6. Compare screenshots before and after when the change is substantial.
 

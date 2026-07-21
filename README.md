@@ -6,10 +6,13 @@ Max-UI is a project-aware frontend design and refactoring plugin for Codex. It r
 
 - Detects frontend frameworks, styling systems, component libraries, icons, routes, and build commands.
 - Extracts colors, fonts, CSS custom properties, radii, shadows, gradients, and other design signals.
+- Maps semantic token roles, color families, and raw-color versus token-reference coverage.
 - Separates deterministic defects, strong implementation signals, and findings that require visual review.
+- Classifies repairs as `safe-auto`, `needs-review`, or `direction-required`.
 - Supports audit, polish, redesign, build, systemize, and verification workflows.
 - Preserves established product identity and existing component conventions by default.
-- Checks common failure modes such as viewport locks, hidden overflow, unstable image dimensions, excessive gradients, color sprawl, weak focus treatment, and card-heavy composition.
+- Checks common failure modes such as viewport locks, late responsive cascade overrides, incomplete custom dialogs, unstable image dimensions, excessive gradients, color sprawl, weak focus treatment, and card-heavy composition.
+- Includes a read-only browser runtime audit for overflow, clipping, computed contrast, broken images, duplicate IDs, undersized controls and text, accessible names, and rendered effect density.
 
 ## Skill
 
@@ -54,7 +57,14 @@ Start a new Codex task after installation so the new skill is loaded.
 Run the bundled script tests:
 
 ```text
-node skills/max-ui/scripts/tests/run-tests.mjs
+npm test
+```
+
+Run the browser behavior tests after installing Chromium for Playwright:
+
+```text
+npx playwright install chromium
+npm run test:browser
 ```
 
 Run the Codex validators from their installed skill directories:

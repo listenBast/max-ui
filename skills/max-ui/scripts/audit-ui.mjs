@@ -39,6 +39,154 @@ function countMatches(text, regex) {
   return (text.match(regex) ?? []).length;
 }
 
+function extractStyleSegments(text, extension) {
+  if (!/\.(vue|svelte|astro)$/.test(extension)) return [{ text, offset: 0, scoped: false }];
+  const segments = [];
+  const styleTag = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  let match;
+  while ((match = styleTag.exec(text)) !== null) {
+    const openingTag = match[0].slice(0, match[0].indexOf('>') + 1);
+    segments.push({ text: match[1], offset: match.index + match[0].indexOf(match[1]), scoped: /\bscoped(?:\s|=|>)/i.test(openingTag) });
+  }
+  return segments.length > 0 ? segments : [{ text, offset: 0, scoped: false }];
+}
+
+function findConditionalBlocks(css) {
+  const blocks = [];
+  const atRule = /@(media|supports|container|layer|scope)\b/gi;
+  let cursor = 0;
+  while (cursor < css.length) {
+    atRule.lastIndex = cursor;
+    const match = atRule.exec(css);
+    if (!match) break;
+    const start = match.index;
+    const open = css.indexOf('{', start);
+    if (open === -1) break;
+    let depth = 0;
+    let end = -1;
+    for (let index = open; index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1;
+      else if (css[index] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = index + 1;
+          break;
+        }
+      }
+    }
+    if (end === -1) break;
+    const kind = match[1].toLowerCase();
+    const query = css.slice(match.index + match[0].length, open).trim();
+    blocks.push({ start, open, end, kind, query, isNarrow: kind === 'media' && /max-width/i.test(query), body: css.slice(open + 1, end - 1) });
+    cursor = end;
+  }
+  return blocks;
+}
+
+function maskRanges(text, ranges) {
+  const chars = [...text];
+  for (const range of ranges) {
+    for (let index = range.start; index < range.end; index += 1) chars[index] = ' ';
+  }
+  return chars.join('');
+}
+
+function parseDeclarations(body) {
+  const declarations = new Map();
+  for (const part of body.split(';')) {
+    const match = part.match(/^\s*([a-z-]+)\s*:\s*(.+?)\s*$/i);
+    if (!match) continue;
+    const important = /\s*!important\s*$/i.test(match[2]);
+    const value = match[2].replace(/\s*!important\s*$/i, '').replace(/\s+/g, ' ').trim();
+    declarations.set(match[1].toLowerCase(), { value, important });
+  }
+  return declarations;
+}
+
+function parseCssRules(css, baseOffset = 0, scoped = false) {
+  const rules = [];
+  const rulePattern = /([^{}@]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = rulePattern.exec(css)) !== null) {
+    const selectorSource = match[1].replace(/\/\*[\s\S]*?\*\//g, (comment) => ' '.repeat(comment.length));
+    const selector = selectorSource.replace(/\s+/g, ' ').trim();
+    if (!selector) continue;
+    const selectorOffset = Math.max(0, selectorSource.search(/\S/));
+    rules.push({ selector, declarations: parseDeclarations(match[2]), index: baseOffset + match.index + selectorOffset, scoped });
+  }
+  return rules;
+}
+
+function propertiesOverlap(first, second) {
+  if (first === second) return true;
+  const groups = ['margin', 'padding', 'inset', 'overflow', 'background', 'font', 'flex', 'animation', 'transition'];
+  if (groups.some((base) => (first === base && second.startsWith(`${base}-`)) || (second === base && first.startsWith(`${base}-`)))) return true;
+  if ((first === 'grid' && second.startsWith('grid-')) || (second === 'grid' && first.startsWith('grid-'))) return true;
+  if ((first === 'grid-template' && second.startsWith('grid-template-')) || (second === 'grid-template' && first.startsWith('grid-template-'))) return true;
+  return false;
+}
+
+function declarationOverrides(mobileDeclaration, laterDeclaration, sameProperty) {
+  if (mobileDeclaration.important && !laterDeclaration.important) return false;
+  if (sameProperty && mobileDeclaration.value === laterDeclaration.value) return false;
+  return true;
+}
+
+function detectLateMediaOverrides(file, source, extension, addFinding) {
+  const segments = extractStyleSegments(source, extension);
+  const segmentData = segments.map((segment) => {
+    const conditionalBlocks = findConditionalBlocks(segment.text);
+    return {
+      ...segment,
+      conditionalBlocks,
+      outsideRules: parseCssRules(maskRanges(segment.text, conditionalBlocks), segment.offset, segment.scoped)
+    };
+  });
+  const outsideRules = segmentData.flatMap((segment) => segment.outsideRules);
+  for (const segment of segmentData) {
+    for (const media of segment.conditionalBlocks.filter((block) => block.isNarrow)) {
+      const mobileRules = parseCssRules(media.body, segment.offset + media.open + 1, segment.scoped);
+      for (const mobileRule of mobileRules) {
+        const laterRules = outsideRules.filter((rule) => rule.index > segment.offset + media.end && rule.selector === mobileRule.selector && rule.scoped === mobileRule.scoped);
+        for (const laterRule of laterRules) {
+          const overridden = [];
+          for (const [mobileProperty, mobileDeclaration] of mobileRule.declarations) {
+            for (const [laterProperty, laterDeclaration] of laterRule.declarations) {
+              if (!propertiesOverlap(mobileProperty, laterProperty)) continue;
+              if (!declarationOverrides(mobileDeclaration, laterDeclaration, mobileProperty === laterProperty)) continue;
+              overridden.push(mobileProperty);
+              break;
+            }
+          }
+          if (overridden.length === 0) continue;
+          addFinding(file, source, laterRule.index, {
+            ruleId: 'media-query-late-override', severity: 'high', evidenceClass: 'strong-signal', category: 'responsive', fixability: 'needs-review',
+            message: `Selector "${mobileRule.selector.slice(0, 80)}" overrides ${overridden.slice(0, 4).join(', ')} after @media ${media.query}.`,
+            suggestion: 'Move the narrow-screen rule after the desktop rule, increase intentional specificity, or restructure the cascade so the mobile contract wins.',
+            snippet: `${mobileRule.selector} { ${overridden.join(', ')} }`
+          });
+          break;
+        }
+      }
+    }
+  }
+}
+
+function selectorTargetsControl(selector) {
+  return selector.split(',').some((part) => {
+    if (/::(?:before|after)\b/i.test(part)) return false;
+    const compounds = part.trim().split(/\s*(?:>|\+|~|\s)\s*/).filter(Boolean);
+    const target = compounds.at(-1)?.replace(/:(?:hover|focus|focus-visible|active|disabled|checked|first-child|last-child|nth-child\([^)]*\))\b/gi, '') ?? '';
+    return /^(?:button|input|select|textarea|summary|a(?:\[|$)|\[role\s*=)/i.test(target)
+      || /[.#][a-z0-9_-]*(?:button|btn|control|action|toggle|switch|tab)(?=$|[.#:[\]])/i.test(target);
+  });
+}
+
+function defaultFixability(finding) {
+  if (finding.fixability) return finding.fixability;
+  return finding.evidenceClass === 'visual-review' ? 'direction-required' : 'needs-review';
+}
+
 function formatMarkdown(report) {
   const lines = [
     '# Frontend Audit',
@@ -46,6 +194,7 @@ function formatMarkdown(report) {
     `Project: \`${report.projectRoot}\``,
     `Scanned: ${report.summary.filesScanned} files`,
     `Findings: ${report.summary.total}`,
+    `Fixability: ${report.summary.byFixability['safe-auto']} safe-auto, ${report.summary.byFixability['needs-review']} needs-review, ${report.summary.byFixability['direction-required']} direction-required`,
     ''
   ];
   if (report.findings.length === 0) {
@@ -57,7 +206,7 @@ function formatMarkdown(report) {
         currentFile = finding.file;
         lines.push(`## ${currentFile}`, '');
       }
-      lines.push(`- **${finding.severity.toUpperCase()} · ${finding.evidenceClass} · ${finding.ruleId}** at line ${finding.line}: ${finding.message}`);
+      lines.push(`- **${finding.severity.toUpperCase()} | ${finding.evidenceClass} | ${finding.fixability} | ${finding.ruleId}** at line ${finding.line}: ${finding.message}`);
       if (finding.snippet) lines.push(`  - Evidence: \`${finding.snippet.replace(/`/g, '\\`')}\``);
       lines.push(`  - Fix: ${finding.suggestion}`);
     }
@@ -95,6 +244,7 @@ function add(file, text, index, finding) {
     line,
     message: finding.message,
     suggestion: finding.suggestion,
+    fixability: defaultFixability(finding),
     snippet: finding.snippet ?? lineSnippetAt(text, index)
   });
 }
@@ -105,7 +255,7 @@ for (const { file, text } of sources) {
   const directRules = [
     {
       regex: /(?:user-scalable\s*=\s*["']?no|maximum-scale\s*=\s*["']?1(?:\.0)?)/gi,
-      finding: { ruleId: 'zoom-disabled', severity: 'critical', evidenceClass: 'deterministic', category: 'accessibility', message: 'Browser zoom appears to be disabled.', suggestion: 'Remove the zoom restriction and test the layout at enlarged text and page zoom.' }
+      finding: { ruleId: 'zoom-disabled', severity: 'critical', evidenceClass: 'deterministic', category: 'accessibility', fixability: 'safe-auto', message: 'Browser zoom appears to be disabled.', suggestion: 'Remove the zoom restriction and test the layout at enlarged text and page zoom.' }
     },
     {
       regex: /transition\s*:\s*all\b/gi,
@@ -183,13 +333,31 @@ for (const { file, text } of sources) {
     while ((match = button.exec(text)) !== null) {
       const attrs = match[1];
       const body = match[2];
-      const iconLike = /<svg\b|<[A-Z][A-Za-z0-9]*(?:Icon)\b|\bicon\s*=/.test(body);
+      const inlineIcon = /<svg\b|\bicon\s*=/.test(body);
+      const componentIcon = /<[A-Z][A-Za-z0-9]*(?:Icon)?\b[^>]*\/\s*>/.test(body);
+      const iconLike = inlineIcon || componentIcon;
       const named = /\baria-label\s*=|\baria-labelledby\s*=|\btitle\s*=/.test(attrs);
       if (iconLike && !named && visibleButtonText(body).length === 0) {
         add(file, text, match.index, {
-          ruleId: 'icon-button-name', severity: 'high', evidenceClass: 'deterministic', category: 'accessibility',
+          ruleId: 'icon-button-name', severity: 'high', evidenceClass: inlineIcon ? 'deterministic' : 'strong-signal', category: 'accessibility',
           message: 'An icon-only button has no accessible name.',
           suggestion: 'Add a concise aria-label or associate visible text through aria-labelledby.'
+        });
+      }
+    }
+
+    const customDialogIndex = text.search(/<(?!dialog\b)[a-z][\w:-]*\b[^>]*(?:role\s*=\s*["']dialog["']|aria-modal\s*=\s*["']true["'])[^>]*>/i);
+    if (customDialogIndex >= 0) {
+      const missing = [];
+      if (!/(?:Escape|@keydown\.esc|keydown[^\n]{0,120}(?:Esc|Escape)|key[^\n]{0,80}===?[^\n]{0,20}["']Escape)/i.test(text)) missing.push('Escape close');
+      if (!/(?:autofocus|autoFocus|\.focus\s*\(|v-focus)/.test(text)) missing.push('initial focus');
+      if (!/(?:focus-trap|focusTrap|trapFocus|keydown[^\n]{0,160}["']Tab|key[^\n]{0,80}===?[^\n]{0,20}["']Tab)/i.test(text)) missing.push('focus containment');
+      if (!/(?:previousActiveElement|activeElement|returnFocus|restoreFocus)/i.test(text)) missing.push('focus restoration');
+      if (missing.length > 0) {
+        add(file, text, customDialogIndex, {
+          ruleId: 'dialog-keyboard-contract', severity: missing.includes('Escape close') || missing.includes('initial focus') ? 'high' : 'medium', evidenceClass: 'strong-signal', category: 'accessibility', fixability: 'needs-review',
+          message: `A custom modal dialog lacks clear implementation signals for: ${missing.join(', ')}.`,
+          suggestion: 'Implement the missing keyboard and focus lifecycle, or use an established accessible dialog primitive.'
         });
       }
     }
@@ -272,13 +440,26 @@ for (const { file, text } of sources) {
         });
       }
 
+      const controlSelector = selectorTargetsControl(selector);
+      const controlHeight = body.match(/(?:min-)?height\s*:\s*([0-9.]+)px/i);
+      const controlFont = body.match(/font-size\s*:\s*([0-9.]+)px/i);
+      if (controlSelector && ((controlHeight && Number(controlHeight[1]) < 32) || (controlFont && Number(controlFont[1]) < 11))) {
+        const details = [controlHeight ? `height ${controlHeight[1]}px` : null, controlFont ? `font ${controlFont[1]}px` : null].filter(Boolean).join(', ');
+        add(file, text, blockIndex, {
+          ruleId: 'compact-control-target', severity: 'medium', evidenceClass: 'strong-signal', category: 'accessibility', fixability: 'needs-review',
+          message: `Control-like selector "${selector.slice(0, 80)}" uses ${details}.`,
+          suggestion: 'Verify scanability and pointer/touch target size in context; enlarge the interactive box without unnecessarily inflating dense layouts.',
+          snippet: blockSnippet
+        });
+      }
+
       const foregroundHex = solidHex(body.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i)?.[1] ?? '');
       const backgroundHex = solidHex(body.match(/(?:^|;)\s*background(?:-color)?\s*:\s*([^;]+)/i)?.[1] ?? '');
       if (foregroundHex && backgroundHex) {
         const ratio = contrastRatio(parseHexColor(foregroundHex), parseHexColor(backgroundHex));
         if (ratio !== null && ratio < 4.5) {
           add(file, text, blockIndex, {
-            ruleId: 'static-low-contrast', severity: ratio < 3 ? 'high' : 'medium', evidenceClass: 'deterministic', category: 'color',
+            ruleId: 'static-low-contrast', severity: ratio < 3 ? 'high' : 'medium', evidenceClass: 'deterministic', category: 'color', fixability: 'direction-required',
             message: `Static text/background contrast is ${ratio.toFixed(2)}:1 for selector "${selector.slice(0, 80)}".`,
             suggestion: 'Adjust the text or surface token, then verify the computed runtime colors.',
             snippet: blockSnippet
@@ -350,6 +531,8 @@ for (const { file, text } of sources) {
         suggestion: 'Keep them when they fit the product; otherwise consider a more specific display or data role rather than changing every font.'
       });
     }
+
+    detectLateMediaOverrides(file, text, extension, add);
   }
 }
 
@@ -360,11 +543,15 @@ const byEvidenceClass = ['deterministic', 'strong-signal', 'visual-review'].redu
   result[evidenceClass] = findings.filter((finding) => finding.evidenceClass === evidenceClass).length;
   return result;
 }, {});
+const byFixability = ['safe-auto', 'needs-review', 'direction-required'].reduce((result, fixability) => {
+  result[fixability] = findings.filter((finding) => finding.fixability === fixability).length;
+  return result;
+}, {});
 
 const report = {
   projectRoot: root,
   generatedAt: new Date().toISOString(),
-  summary: { total: findings.length, returned: limited.length, bySeverity, byEvidenceClass, filesScanned: scan.files.length },
+  summary: { total: findings.length, returned: limited.length, bySeverity, byEvidenceClass, byFixability, filesScanned: scan.files.length },
   scan: { truncated: scan.truncated, maxFiles: args.maxFiles, skippedLarge: scan.skippedLarge.slice(0, 20) },
   findings: limited
 };

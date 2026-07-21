@@ -1,0 +1,9 @@
+{
+  "name": "max-ui-react-tailwind-fixture",
+  "private": true,
+  "dependencies": {
+    "react": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "lucide-react": "^0.468.0"
+  }
+}

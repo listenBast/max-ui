@@ -1,0 +1,30 @@
+:root {
+  --color-canvas: #888888;
+  --color-text: #777777;
+}
+
+body {
+  min-width: 1024px;
+  overflow-x: hidden;
+  color: #777777;
+  background-color: #888888;
+}
+
+.hero-title {
+  color: transparent;
+  background: linear-gradient(90deg, #7c3aed, #06b6d4);
+  background-clip: text;
+}
+
+.card {
+  border: 1px solid #dddddd;
+  border-radius: 32px;
+  box-shadow: 0 10px 30px #00000022;
+  transition: all 200ms ease;
+  animation: rise 300ms ease;
+}
+
+@keyframes rise {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

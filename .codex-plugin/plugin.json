@@ -1,6 +1,6 @@
 {
   "name": "max-ui",
-  "version": "0.1.0+codex.20260721050528",
+  "version": "0.2.0",
   "description": "Max-UI provides project-aware frontend design, refactoring, and visual quality assurance for Codex.",
   "license": "MIT",
   "author": {

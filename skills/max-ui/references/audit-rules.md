@@ -42,6 +42,22 @@ A clue that cannot be judged reliably from source alone:
 
 Require screenshots or live inspection before presenting these as conclusions.
 
+## Fixability Classes
+
+### Safe Auto
+
+Use only when the repair is narrow, local, and does not choose a new design direction. Examples include restoring browser zoom or adding an accessible name that is already unambiguous from nearby copy. Re-run the relevant static and runtime checks after the edit.
+
+### Needs Review
+
+Use when the evidence is credible but the correct repair depends on component behavior, responsive intent, or surrounding layout. Examples include undersized controls in a dense toolbar, a late cascade override, clipped text, duplicate IDs with references, or an incomplete custom-dialog focus lifecycle.
+
+### Direction Required
+
+Use when several technically valid repairs would produce meaningfully different product identity or hierarchy. Examples include palette roles, font changes, broad contrast-token changes, card removal, effect density, or replacing a repeated visual motif.
+
+Fixability is separate from severity. A critical issue can still need review, while a low-severity defect may be safe to repair automatically.
+
 ## Prioritization
 
 Order findings by impact:
@@ -74,4 +90,3 @@ For each actionable finding include:
 - Whether it is safe to fix automatically or requires design direction.
 
 When no issues are found, say so and report the runtime or viewport gaps that remain untested.
-

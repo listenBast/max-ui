@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { colorFamily, parseHexColor } from './lib/color.mjs';
 import { readJson, readUtf8, topCounts, walkTextFiles } from './lib/files.mjs';
 
 function parseArgs(argv) {
@@ -80,6 +81,22 @@ function collectMatches(text, regex, map, normalize = (value) => value.trim()) {
   }
 }
 
+function tokenRole(name) {
+  const value = name.toLowerCase();
+  if (/success|positive|green|ok/.test(value)) return 'positive';
+  if (/warning|amber|yellow|caution/.test(value)) return 'warning';
+  if (/danger|error|destructive|red/.test(value)) return 'danger';
+  if (/focus|ring/.test(value)) return 'focus';
+  if (/chart|series|data|trend/.test(value)) return 'data';
+  if (/muted|subtle|secondary/.test(value)) return 'secondary-text';
+  if (/foreground|text|ink|copy/.test(value)) return /muted|subtle|secondary/.test(value) ? 'secondary-text' : 'text';
+  if (/border|line|divider|stroke/.test(value)) return 'border';
+  if (/primary|accent|action|brand|link/.test(value)) return 'action-or-brand';
+  if (/surface|panel|card|popover|dialog/.test(value)) return 'surface';
+  if (/bg|background|canvas|page/.test(value)) return 'canvas';
+  return 'unclassified';
+}
+
 const args = parseArgs(process.argv.slice(2));
 const root = path.resolve(args.root);
 const packageJson = await readJson(path.join(root, 'package.json'));
@@ -89,6 +106,8 @@ const extensionCounts = new Map();
 const colors = new Map();
 const fonts = new Map();
 const customProperties = new Map();
+const semanticTokenRoles = new Map();
+const colorFamilies = new Map();
 const radii = new Map();
 const shadows = new Map();
 const contents = [];
@@ -96,6 +115,8 @@ let gradientCount = 0;
 let importantCount = 0;
 let styleFileCount = 0;
 let componentFileCount = 0;
+let rawColorOccurrences = 0;
+let variableReferenceCount = 0;
 
 for (const file of scan.files) {
   const extension = path.extname(file.relative).toLowerCase();
@@ -107,9 +128,23 @@ for (const file of scan.files) {
   contents.push(text);
   gradientCount += (text.match(/(?:linear|radial|conic|repeating-linear|repeating-radial)-gradient\s*\(/gi) ?? []).length;
   importantCount += (text.match(/!important\b/g) ?? []).length;
-  collectMatches(text, /(#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\b|(?:rgb|hsl|oklch|oklab|lab|lch|color-mix)\([^\n;}{]{1,160}\))/gi, colors, (value) => value.toLowerCase().replace(/\s+/g, ' '));
+  variableReferenceCount += (text.match(/var\(\s*--[a-z0-9_-]+/gi) ?? []).length;
+  const rawColors = [...text.matchAll(/#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\b|(?:rgb|hsl|oklch|oklab|lab|lch|color-mix)\([^\n;}{]{1,160}\)/gi)];
+  rawColorOccurrences += rawColors.length;
+  for (const match of rawColors) {
+    const expression = match[0].toLowerCase().replace(/\s+/g, ' ');
+    colors.set(expression, (colors.get(expression) ?? 0) + 1);
+    const parsed = parseHexColor(expression);
+    if (!parsed) continue;
+    const family = colorFamily(parsed);
+    colorFamilies.set(family, (colorFamilies.get(family) ?? 0) + 1);
+  }
   collectMatches(text, /font-family\s*:\s*([^;}{\n]+)/gi, fonts, (value) => value.replace(/\s+/g, ' ').trim());
   collectMatches(text, /(--[a-z0-9_-]+)\s*:/gi, customProperties, (value) => value.toLowerCase());
+  for (const match of text.matchAll(/(--[a-z0-9_-]+)\s*:/gi)) {
+    const role = tokenRole(match[1]);
+    semanticTokenRoles.set(role, (semanticTokenRoles.get(role) ?? 0) + 1);
+  }
   collectMatches(text, /border-radius\s*:\s*([^;}{\n]+)/gi, radii, (value) => value.replace(/\s+/g, ' ').trim());
   collectMatches(text, /box-shadow\s*:\s*([^;}{\n]+)/gi, shadows, (value) => value.replace(/\s+/g, ' ').trim());
 }
@@ -148,8 +183,16 @@ const output = {
   designFingerprint: {
     cssCustomPropertyCount: customProperties.size,
     topCustomProperties: topCounts(customProperties, 30),
+    semanticTokenRoles: topCounts(semanticTokenRoles, 20),
+    tokenCoverage: {
+      definitions: customProperties.size,
+      references: variableReferenceCount,
+      rawColorOccurrences,
+      variableShare: variableReferenceCount + rawColorOccurrences === 0 ? null : Number((variableReferenceCount / (variableReferenceCount + rawColorOccurrences)).toFixed(3))
+    },
     uniqueColorExpressions: colors.size,
     topColors: topCounts(colors, 24),
+    colorFamilies: topCounts(colorFamilies, 16),
     fontFamilies: topCounts(fonts, 16),
     gradients: gradientCount,
     radii: topCounts(radii, 16),
@@ -163,4 +206,3 @@ const output = {
 };
 
 process.stdout.write(`${JSON.stringify(output, null, args.compact ? 0 : 2)}\n`);
-

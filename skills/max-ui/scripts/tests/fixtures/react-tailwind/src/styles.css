@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+:root {
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+  --color-text: #111827;
+  --color-muted-text: #667085;
+  --color-action: #2563eb;
+  --color-danger: #dc2626;
+}
+
+body {
+  color: var(--color-text);
+  background-color: var(--color-canvas);
+}
+
+.notice {
+  color: #9a3412;
+  background-color: rgb(255 237 213);
+}

@@ -33,3 +33,42 @@ export function contrastRatio(foreground, background) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+export function rgbToHsl(color) {
+  if (!color) return null;
+  const r = color.r / 255;
+  const g = color.g / 255;
+  const b = color.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+  let hue = 0;
+  let saturation = 0;
+
+  if (delta > 0) {
+    saturation = delta / (1 - Math.abs(2 * lightness - 1));
+    if (max === r) hue = 60 * (((g - b) / delta) % 6);
+    else if (max === g) hue = 60 * ((b - r) / delta + 2);
+    else hue = 60 * ((r - g) / delta + 4);
+  }
+  if (hue < 0) hue += 360;
+  return { hue, saturation, lightness };
+}
+
+export function colorFamily(color) {
+  const hsl = rgbToHsl(color);
+  if (!hsl) return 'unknown';
+  if (hsl.lightness < 0.04) return 'near-black';
+  if (hsl.lightness > 0.94) return 'near-white';
+  if (hsl.saturation < 0.08) return hsl.lightness < 0.2 ? 'near-black' : hsl.lightness > 0.88 ? 'near-white' : 'neutral';
+  const hue = hsl.hue;
+  if (hue < 15 || hue >= 345) return 'red';
+  if (hue < 45) return 'orange';
+  if (hue < 70) return 'yellow';
+  if (hue < 165) return 'green';
+  if (hue < 200) return 'cyan';
+  if (hue < 255) return 'blue';
+  if (hue < 295) return 'violet';
+  if (hue < 345) return 'magenta';
+  return 'red';
+}

@@ -1,0 +1,13 @@
+{
+  "name": "max-ui-plugin",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node skills/max-ui/scripts/tests/run-tests.mjs",
+    "test:browser": "playwright test skills/max-ui/scripts/tests/runtime-audit.spec.mjs --workers=1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}
